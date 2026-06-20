@@ -483,11 +483,13 @@ export async function handleUserRegister(interaction: ChatInputCommandInteractio
 }
 
 export async function handleReload(interaction: ChatInputCommandInteraction) {
-  if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+  const OWNER_ID = process.env.OWNER_ID || '983352059132792872'; // nujunis64
+
+  if (interaction.user.id !== OWNER_ID) {
     const embed = new EmbedBuilder()
       .setColor(0xFF3366)
       .setTitle('❌ 권한 부족')
-      .setDescription('이 명령어는 서버 관리자만 사용할 수 있습니다.');
+      .setDescription('이 명령어는 봇 개발자(소유자) 전용 명령어입니다.');
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
 
