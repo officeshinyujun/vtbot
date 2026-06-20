@@ -1,77 +1,110 @@
-# Render를 이용한 Discord Bot 배포 가이드
+# Discord Bot 배포 가이드 (Render & GCP VM)
 
-본 프로젝트([vtbot](file:///Users/yjshin/projects/vtbot))를 [Render](https://render.com/)에 배포하는 가이드입니다. 디스코드 봇은 웹 요청을 받지 않는 지속 실행 프로세스이므로, Render의 **Background Worker (배경 작업 서비스)** 타입으로 배포해야 합니다.
-
----
-
-## 1. 사전 준비 사항
-
-### 1.1. Git 리포지토리 구성
-Render는 GitHub 또는 GitLab 리포지토리와 연동하여 자동으로 빌드 및 배포를 수행합니다.
-* 현재 코드가 Git 리포지토리에 푸시되어 있어야 합니다.
-
-### 1.2. Render 계정 생성 및 연동
-[Render 홈페이지](https://render.com/)에 가입하고, GitHub/GitLab 계정을 연동해 둡니다.
+본 프로젝트([vtbot](file:///Users/yjshin/projects/vtbot))를 **Render** 또는 **GCP VM (Compute Engine)** 환경에 배포하고 서비스하는 가이드입니다.
 
 ---
 
-## 2. Render에서 배포 설정 단계
+## 1. Render 배포 (Background Worker)
 
-Render 대시보드([dashboard.render.com](https://dashboard.render.com/))에서 아래와 같이 새 서비스를 생성합니다.
+디스코드 봇은 외부 웹 요청을 받지 않는 백그라운드 프로세스이므로, Render의 **Background Worker** 타입으로 배포해야 합니다.
 
-### 2.1. 서비스 타입 선택
-1. **New +** 버튼을 클릭한 뒤, **Background Worker**를 선택합니다.
-   * *주의: **Web Service**를 선택하면 포트(Port) 바인딩 및 헬스 체크 실패로 인해 배포가 자동으로 중단됩니다.*
-2. 연동된 Git 리포지토리 목록에서 본 프로젝트([vtbot](file:///Users/yjshin/projects/vtbot))를 선택합니다.
+### 1.1. Render에서 배포 설정
+1. [Render 대시보드](https://dashboard.render.com/)에서 **New +** > **Background Worker**를 선택합니다.
+2. 본 프로젝트([vtbot](file:///Users/yjshin/projects/vtbot))의 GitHub 리포지토리를 연동합니다.
+3. 세부 설정 입력:
+   * **Runtime**: `Node`
+   * **Build Command**: `npm install && npm run build`
+   * **Start Command**: `npm run start`
+4. **Environment Variables** 설정:
+   * `DISCORD_TOKEN`, `CLIENT_ID`, `GUILD_ID`, `HENRIK_API_KEY`
+   * `DATABASE_PATH`: `/data/db.json` (데이터 유지를 위해 설정 권장)
+5. **Disk 마운트**:
+   * **Disks** 메뉴에서 디스크 생성 (Name: `vtbot-db-disk`, Mount Path: `/data`)
 
-### 2.2. 인스턴스 세부 정보 설정
-* **Name**: 서비스 이름 입력 (예: `vtbot-discord-bot`)
-* **Region**: 사용자와 가까운 리전 선택 (예: `Singapore` 또는 `Oregon`)
-* **Branch**: 배포할 브랜치 (예: `main` 또는 `master`)
-* **Runtime**: `Node`
-* **Build Command**: `npm install && npm run build`
-* **Start Command**: `npm run start`
-
----
-
-## 3. 환경 변수(Environment Variables) 설정
-
-배포 생성 화면 하단의 **Advanced** 영역 혹은 생성 완료 후 **Variables** 메뉴에서 다음 환경 변수들을 등록합니다.
-
-* `DISCORD_TOKEN`: 디스코드 봇 토큰
-* `CLIENT_ID`: 디스코드 애플리케이션 ID
-* `GUILD_ID`: 봇을 테스트할 디스코드 서버 ID
-* `HENRIK_API_KEY`: Valorant API 호출을 위한 Henrik API 키
-* `DATABASE_PATH`: 데이터베이스 파일이 위치할 절대 경로 (영구 데이터 유지를 위해 `/data/db.json`으로 설정을 권장합니다. 아래 **4. 로컬 데이터베이스 유지 설정** 참고)
+*자세한 원클릭 배포 설정은 [3. Blueprint (render.yaml) 배포]를 참고하세요.*
 
 ---
 
-## 4. 로컬 데이터베이스 (`db.json`) 유지 설정
+## 2. GCP VM 배포 (Node.js & PM2)
 
-이 봇은 유저 정보를 파일 데이터베이스에 기록하여 관리합니다 ([src/database.ts](file:///Users/yjshin/projects/vtbot/src/database.ts) 참조).
+GCP VM(Compute Engine, Linux 기준 - Ubuntu/Debian 권장)을 사용하여 봇을 24시간 가동하고, 프로세스가 꺼지더라도 자동으로 재부팅되도록 **PM2**를 설정하는 방법입니다.
 
-> [!WARNING]
-> Render의 기본 파일시스템은 임시적(Ephemeral)이기 때문에, 봇이 재배포되거나 재시작되면 `db.json` 데이터가 삭제됩니다. 영구적인 데이터 저장을 위해 **Render Disk**와 `DATABASE_PATH` 환경 변수 설정을 완료해야 합니다.
+### 2.1. VM 초기 설정 및 패키지 설치
+VM 인스턴스에 SSH로 접속한 뒤 아래 명령어를 실행하여 필수 패키지를 설치합니다.
 
-### Render Disk 및 경로 설정 방법
-1. 서비스 페이지의 **Disks** 메뉴로 이동하여 **Add Disk**를 클릭합니다.
-2. 디스크 설정을 다음과 같이 입력합니다:
-   * **Name**: `vtbot-db-disk`
-   * **Mount Path**: `/data` (실행 폴더 외부의 독립된 영구 저장 공간)
-   * **Size**: `1 GiB` (봇 데이터 용량 대비 매우 충분합니다)
-3. 서비스의 **Variables** 메뉴에서 다음 환경 변수를 추가합니다:
-   * **Key**: `DATABASE_PATH`
-   * **Value**: `/data/db.json`
-4. 코드([src/database.ts](file:///Users/yjshin/projects/vtbot/src/database.ts#L15))는 `DATABASE_PATH` 환경 변수가 있을 때 이 경로를 사용하도록 구성되어 있어, 로컬 개발 시에는 이전과 동일하게 프로젝트 루트의 `db.json`을 사용하고 Render 상에서는 마운트된 디스크의 `/data/db.json`을 안전하게 바라봅니다.
+```bash
+# 1. 패키지 리스트 업데이트 및 Git 설치
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git curl
+
+# 2. Node.js (버전 20 LTS) 설치
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# 3. Node.js 설치 상태 확인
+node -v
+npm -v
+```
+
+### 2.2. 프로젝트 복제 및 패키지 설정
+```bash
+# 1. GitHub 저장소 클론
+git clone https://github.com/officeshinyujun/vtbot.git
+cd vtbot
+
+# 2. 의존성 패키지 설치
+npm install
+
+# 3. 빌드 (TypeScript 컴파일)
+npm run build
+```
+
+### 2.3. 환경 변수 구성
+`.env` 파일을 작성하여 디스코드 API 자격 증명을 설정합니다.
+```bash
+# .env.example를 복사하여 .env 생성
+cp .env.example .env
+
+# nano 편집기로 .env 파일 수정
+nano .env
+```
+*방향키로 이동하여 실제 디스코드 봇 토큰 및 ID 값을 적고, `Ctrl + O` (저장) -> `Enter` -> `Ctrl + X` (종료)로 빠져나옵니다.*
+
+> [!NOTE]
+> **GCP VM의 데이터베이스 저장 특징**:
+> GCP VM 환경은 파일시스템이 영구 유지되므로, Render와 달리 디스크 볼륨 설정을 따로 하지 않아도 프로젝트 루트([/Users/yjshin/projects/vtbot](file:///Users/yjshin/projects/vtbot)) 안의 `db.json`에 안전하게 데이터가 누적 저장됩니다.
+
+### 2.4. PM2를 활용한 무중단 가동 설정
+세션이 끊겨도 봇이 실행 상태를 유지하고, 시스템이 리부팅될 때 자동으로 켜지도록 PM2 프로세스 매니저를 적용합니다.
+
+```bash
+# 1. PM2 글로벌 설치
+sudo npm install -g pm2
+
+# 2. 빌드 파일(dist/index.js)을 PM2 백그라운드로 실행
+pm2 start dist/index.js --name "vtbot"
+
+# 3. VM 서버 재부팅 시 자동 시작 설정
+pm2 startup
+```
+* `pm2 startup`을 입력하면 터미널 화면에 `sudo env PATH=... pm2 startup systemd -u ...` 형식의 긴 명령어가 출력됩니다. **해당 출력줄을 복사해서 터미널에 그대로 실행**해 주어야 자동 실행 데몬에 등록됩니다.
+
+```bash
+# 4. 현재 가동 중인 PM2 프로세스 상태 저장
+pm2 save
+```
+
+### 2.5. PM2 관리 명령어 모음
+* **실시간 로그 모니터링**: `pm2 logs vtbot`
+* **봇 상태 확인**: `pm2 status`
+* **봇 재시작**: `pm2 restart vtbot`
+* **봇 정지**: `pm2 stop vtbot`
 
 ---
 
-## 5. [선택] Blueprint (`render.yaml`)를 사용한 간편 배포
+## 3. Blueprint (`render.yaml`) 배포 (Render 전용)
 
-프로젝트 루트에 `render.yaml` 파일을 두면 클릭 한 번으로 모든 인프라 설정(디스크 및 환경 변수 구조)을 자동으로 구성하여 배포할 수 있습니다.
-
-### 예시 `render.yaml` 구성
-프로젝트 루트에 아래 설정으로 파일을 추가한 후 Git에 푸시하면 Render가 이를 감지하여 원클릭 배포 템플릿을 생성합니다.
+Render에서 인프라 구성 관리를 코드 형태로 처리하려면 프로젝트 루트에 `render.yaml` 파일을 두고 아래 설정을 활용하여 배포하면 편리합니다.
 
 ```yaml
 services:
@@ -96,6 +129,3 @@ services:
       - key: DATABASE_PATH
         value: /data/db.json
 ```
-* `sync: false` 옵션은 Render 대시보드에서 해당 값을 수동 입력하게 만듭니다.
-* `DATABASE_PATH`는 자동으로 `/data/db.json`으로 바인딩되어 디스크 마운트 경로 `/data`와 매핑됩니다.
-
