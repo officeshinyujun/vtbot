@@ -10,6 +10,7 @@ import {
   handleSearch,
   handleMatchmakerSelect,
   handleUserRegister,
+  handleReload,
 } from './commands';
 
 dotenv.config();
@@ -83,6 +84,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await handleSearch(interaction);
       } else if (commandName === '사용자등록') {
         await handleUserRegister(interaction);
+      } else if (commandName === '리로드') {
+        await handleReload(interaction);
       }
     }
 

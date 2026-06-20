@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder, ChatInputCommandInteraction, User, PermissionFlagsBits, ActionRowBuilder, UserSelectMenuBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, ChatInputCommandInteraction, User, PermissionFlagsBits, ActionRowBuilder, UserSelectMenuBuilder, REST, Routes } from 'discord.js';
 import { getValorantStats } from './valorantApi';
 import { saveUser, getUser, UserProfile, deleteUser } from './database';
 
@@ -90,7 +90,13 @@ export const commands = [
       option.setName('태그')
         .setDescription('Riot ID의 태그 부분 (# 제외, 예: KR1)')
         .setRequired(true)
-    )
+    ),
+
+  // /리로드 (관리자 전용)
+  new SlashCommandBuilder()
+    .setName('리로드')
+    .setDescription('[관리자 전용] 디스코드 API 서버에 슬래시 명령어를 강제로 다시 등록합니다.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ].map(command => command.toJSON());
 
 // 2. Command Handlers
@@ -475,4 +481,49 @@ export async function handleUserRegister(interaction: ChatInputCommandInteractio
     await interaction.editReply({ embeds: [embed] });
   }
 }
+
+export async function handleReload(interaction: ChatInputCommandInteraction) {
+  const token = process.env.DISCORD_TOKEN;
+  const clientId = process.env.CLIENT_ID;
+  const guildId = process.env.GUILD_ID;
+
+  if (!token || !clientId) {
+    return interaction.reply({ content: '❌ 환경 변수(DISCORD_TOKEN 또는 CLIENT_ID)가 설정되지 않았습니다.', ephemeral: true });
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    const rest = new REST({ version: '10' }).setToken(token);
+
+    if (guildId && guildId !== 'your_discord_server_id_here' && guildId.trim() !== '') {
+      await rest.put(
+        Routes.applicationGuildCommands(clientId, guildId),
+        { body: commands },
+      );
+      const embed = new EmbedBuilder()
+        .setColor(0x00FF99)
+        .setTitle('🔄 명령어 리로드 완료')
+        .setDescription(`현재 서버(Guild ID: \`${guildId}\`)에 명령어가 즉시 업데이트되었습니다.`);
+      await interaction.editReply({ embeds: [embed] });
+    } else {
+      await rest.put(
+        Routes.applicationCommands(clientId),
+        { body: commands },
+      );
+      const embed = new EmbedBuilder()
+        .setColor(0x00FF99)
+        .setTitle('🔄 글로벌 명령어 리로드 요청 완료')
+        .setDescription('모든 서버 대상 글로벌 명령어 갱신 요청을 보냈습니다.\n(디스코드 서버 캐시 갱신에 따라 적용까지 최대 수 분~1시간 정도 걸릴 수 있습니다.)');
+      await interaction.editReply({ embeds: [embed] });
+    }
+  } catch (error: any) {
+    const embed = new EmbedBuilder()
+      .setColor(0xFF3366)
+      .setTitle('❌ 리로드 실패')
+      .setDescription(error.message || '명령어 재등록 중 오류가 발생했습니다.');
+    await interaction.editReply({ embeds: [embed] });
+  }
+}
+
 
