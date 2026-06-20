@@ -437,35 +437,29 @@ export async function handleUserRegister(interaction: ChatInputCommandInteractio
   await interaction.deferReply();
 
   try {
-    const stats = await getValorantStats(name, tag);
-    
+    const existingProfile = getUser(targetUser.id);
+
     const profile: UserProfile = {
       discordId: targetUser.id,
       discordTag: targetUser.tag,
-      riotName: stats.riotName,
-      riotTag: stats.riotTag,
-      tier: stats.tier,
-      peakTier: stats.peakTier,
-      rating: stats.rating,
+      riotName: name,
+      riotTag: tag,
+      tier: existingProfile?.tier || 'Unrated',
+      peakTier: existingProfile?.peakTier || 'Unrated',
+      rating: existingProfile?.rating || 0,
       lastUpdated: new Date().toISOString(),
     };
 
     saveUser(profile);
 
-    const lastChangeText = stats.lastChange >= 0 ? `+${stats.lastChange}` : `${stats.lastChange}`;
-
     const embed = new EmbedBuilder()
       .setColor(0x00FF99) // Neon Green
       .setTitle('🎯 [관리자] 발로란트 프로필 연동 완료')
-      .setDescription(`<@${targetUser.id}>님의 발로란트 프로필이 수동으로 연동되었습니다.`)
+      .setDescription(`<@${targetUser.id}>님의 발로란트 프로필이 입력하신 정보대로 직접 연동되었습니다.`)
       .addFields(
         { name: '대상 유저', value: `<@${targetUser.id}>`, inline: true },
-        { name: 'Riot ID', value: `\`${stats.riotName}#${stats.riotTag}\``, inline: true },
-        { name: '현재 티어', value: `\`${stats.tier} (${stats.rr} RR)\``, inline: true },
-        { name: '최고 티어', value: `\`${stats.peakTier}\``, inline: true },
-        { name: '최근 경기 변동', value: `\`${lastChangeText}점\``, inline: true },
-        { name: '최근 5경기 전적', value: `\`${stats.winCount}승 ${stats.lossCount}패\``, inline: true },
-        { name: '최종 매칭 레이팅', value: `\`${stats.rating}점\` (최근 승률 반영)`, inline: true }
+        { name: 'Riot ID', value: `\`${name}#${tag}\``, inline: true },
+        { name: '연동 상태', value: '`성공 (정보 조회 시 세부 갱신)`', inline: true }
       )
       .setTimestamp();
 
