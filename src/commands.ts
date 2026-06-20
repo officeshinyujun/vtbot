@@ -94,7 +94,22 @@ export const commands = [
   // /리로드 (개발자 전용)
   new SlashCommandBuilder()
     .setName('리로드')
-    .setDescription('[개발자 전용] 디스코드 API 서버에 슬래시 명령어를 강제로 다시 등록합니다.')
+    .setDescription('[개발자 전용] 디스코드 API 서버에 슬래시 명령어를 강제로 다시 등록합니다.'),
+
+  // /청소 [대상] (개발자 전용)
+  new SlashCommandBuilder()
+    .setName('청소')
+    .setDescription('[개발자 전용] 등록된 슬래시 명령어를 삭제하여 중복 문제를 해결합니다.')
+    .addStringOption(option =>
+      option.setName('대상')
+        .setDescription('삭제할 명령어 범위를 선택하세요.')
+        .setRequired(true)
+        .addChoices(
+          { name: '서버 (현재 서버의 중복 명령어 삭제)', value: 'guild' },
+          { name: '글로벌 (전체 서버용 명령어 삭제)', value: 'global' },
+          { name: '모두 (서버 및 글로벌 명령어 전체 삭제)', value: 'all' }
+        )
+    )
 ].map(command => command.toJSON());
 
 // 2. Command Handlers
@@ -543,5 +558,61 @@ export async function handleReload(interaction: ChatInputCommandInteraction) {
     await interaction.editReply({ embeds: [embed] });
   }
 }
+
+export async function handleClearCommands(interaction: ChatInputCommandInteraction) {
+  const OWNER_ID = process.env.OWNER_ID || '983352059132792872'; // nujunis64
+
+  if (interaction.user.id !== OWNER_ID) {
+    const embed = new EmbedBuilder()
+      .setColor(0xFF3366)
+      .setTitle('❌ 권한 부족')
+      .setDescription('이 명령어는 봇 개발자(소유자) 전용 명령어입니다.');
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  const target = interaction.options.getString('대상', true);
+  const token = process.env.DISCORD_TOKEN;
+  const clientId = process.env.CLIENT_ID;
+  const guildId = process.env.GUILD_ID || interaction.guildId;
+
+  if (!token || !clientId) {
+    return interaction.reply({ content: '❌ 환경 변수(DISCORD_TOKEN 또는 CLIENT_ID)가 설정되지 않았습니다.', ephemeral: true });
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    const rest = new REST({ version: '10' }).setToken(token);
+    let message = '';
+
+    if (target === 'guild' || target === 'all') {
+      if (guildId) {
+        await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: [] });
+        message += `✅ 서버 전용 명령어(Guild ID: \`${guildId}\`) 삭제 완료\n`;
+      } else {
+        message += `⚠️ 현재 서버 ID를 식별할 수 없어 서버 명령어를 삭제하지 못했습니다.\n`;
+      }
+    }
+
+    if (target === 'global' || target === 'all') {
+      await rest.put(Routes.applicationCommands(clientId), { body: [] });
+      message += `✅ 글로벌 명령어(전체 서버용) 삭제 완료 (반영에 최대 수 분~1시간 소요)\n`;
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(0x00FF99)
+      .setTitle('🧹 슬래시 명령어 청소 완료')
+      .setDescription(message + '\n*(디스코드 앱 새로고침 \`Ctrl + R\`을 하시면 빠르게 반영됩니다.)*');
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (error: any) {
+    const embed = new EmbedBuilder()
+      .setColor(0xFF3366)
+      .setTitle('❌ 청소 실패')
+      .setDescription(error.message || '명령어 삭제 중 오류가 발생했습니다.');
+    await interaction.editReply({ embeds: [embed] });
+  }
+}
+
 
 
