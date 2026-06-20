@@ -92,11 +92,10 @@ export const commands = [
         .setRequired(true)
     ),
 
-  // /리로드 (관리자 전용)
+  // /리로드 (개발자 전용)
   new SlashCommandBuilder()
     .setName('리로드')
-    .setDescription('[관리자 전용] 디스코드 API 서버에 슬래시 명령어를 강제로 다시 등록합니다.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .setDescription('[개발자 전용] 디스코드 API 서버에 슬래시 명령어를 강제로 다시 등록합니다.')
 ].map(command => command.toJSON());
 
 // 2. Command Handlers
