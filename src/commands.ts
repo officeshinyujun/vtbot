@@ -483,6 +483,14 @@ export async function handleUserRegister(interaction: ChatInputCommandInteractio
 }
 
 export async function handleReload(interaction: ChatInputCommandInteraction) {
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+    const embed = new EmbedBuilder()
+      .setColor(0xFF3366)
+      .setTitle('❌ 권한 부족')
+      .setDescription('이 명령어는 서버 관리자만 사용할 수 있습니다.');
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
   const token = process.env.DISCORD_TOKEN;
   const clientId = process.env.CLIENT_ID;
   const guildId = process.env.GUILD_ID;
