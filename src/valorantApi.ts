@@ -69,9 +69,15 @@ async function requestApi<T>(url: string): Promise<T> {
   const response = await fetch(finalUrl);
   if (!response.ok) {
     let errorDetail = '';
+    let errorMessage = '';
     try {
-      const errorJson = await response.json();
+      const errorJson: any = await response.json();
       errorDetail = JSON.stringify(errorJson);
+      if (errorJson && Array.isArray(errorJson.errors) && errorJson.errors.length > 0) {
+        errorMessage = errorJson.errors.map((e: any) => e.message).join(', ');
+      } else if (errorJson && errorJson.message) {
+        errorMessage = errorJson.message;
+      }
     } catch {
       try {
         errorDetail = await response.text();
@@ -82,7 +88,23 @@ async function requestApi<T>(url: string): Promise<T> {
     // Mask the API key in the logged URL to keep logs secure
     const maskedUrl = finalUrl.replace(/api_key=([^&]+)/, 'api_key=HIDDEN');
     console.error(`[API Error] URL: ${maskedUrl} | Status: ${response.status} | Details: ${errorDetail}`);
-    throw new Error(`API 응답 오류 (상태코드: ${response.status}, 내용: ${errorDetail})`);
+
+    let userFriendlyMsg = '';
+    if (response.status === 400) {
+      userFriendlyMsg = '요청이 잘못되었습니다. 이름과 태그 형식을 확인해 주세요.';
+    } else if (response.status === 403) {
+      userFriendlyMsg = 'API 인증에 실패했습니다. (서버 API 키 설정을 확인해 주세요)';
+    } else if (response.status === 404) {
+      userFriendlyMsg = '해당 사용자를 찾을 수 없거나 전적 데이터가 존재하지 않습니다.';
+    } else if (response.status === 429) {
+      userFriendlyMsg = '요청 횟수 제한을 초과했습니다. 잠시 후 다시 시도해 주세요.';
+    } else if (response.status >= 500) {
+      userFriendlyMsg = '발로란트 API 서버 또는 라이엇 서버에 장애가 발생했습니다.';
+    } else {
+      userFriendlyMsg = errorMessage || `API 오류가 발생했습니다. (상태코드: ${response.status})`;
+    }
+
+    throw new Error(userFriendlyMsg);
   }
   return response.json() as Promise<T>;
 }
