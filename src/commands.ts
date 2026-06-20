@@ -71,11 +71,10 @@ export const commands = [
         .setRequired(true)
     ),
 
-  // /사용자등록 [유저] [이름] [태그] (관리자 전용)
+  // /사용자등록 [유저] [이름] [태그] (개발자 전용)
   new SlashCommandBuilder()
     .setName('사용자등록')
-    .setDescription('[관리자 전용] 특정 유저의 디스코드 계정과 발로란트 ID를 연동합니다.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .setDescription('[개발자 전용] 특정 유저의 디스코드 계정과 발로란트 ID를 연동합니다.')
     .addUserOption(option =>
       option.setName('유저')
         .setDescription('연동할 디스코드 유저')
@@ -430,6 +429,16 @@ export async function handleSearch(interaction: ChatInputCommandInteraction) {
 }
 
 export async function handleUserRegister(interaction: ChatInputCommandInteraction) {
+  const OWNER_ID = process.env.OWNER_ID || '983352059132792872'; // nujunis64
+
+  if (interaction.user.id !== OWNER_ID) {
+    const embed = new EmbedBuilder()
+      .setColor(0xFF3366) // Neon Pink
+      .setTitle('❌ 권한 부족')
+      .setDescription('이 명령어는 봇 개발자(소유자) 전용 명령어입니다.');
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
   const targetUser = interaction.options.getUser('유저', true);
   const name = interaction.options.getString('이름', true).trim();
   const tag = interaction.options.getString('태그', true).trim().replace('#', '');
