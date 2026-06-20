@@ -69,6 +69,27 @@ export const commands = [
       option.setName('태그')
         .setDescription('Riot ID의 태그 부분 (# 제외, 예: KR1)')
         .setRequired(true)
+    ),
+
+  // /사용자등록 [유저] [이름] [태그] (관리자 전용)
+  new SlashCommandBuilder()
+    .setName('사용자등록')
+    .setDescription('[관리자 전용] 특정 유저의 디스코드 계정과 발로란트 ID를 연동합니다.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addUserOption(option =>
+      option.setName('유저')
+        .setDescription('연동할 디스코드 유저')
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName('이름')
+        .setDescription('Riot ID의 이름 부분 (예: 닉네임)')
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName('태그')
+        .setDescription('Riot ID의 태그 부분 (# 제외, 예: KR1)')
+        .setRequired(true)
     )
 ].map(command => command.toJSON());
 
@@ -402,3 +423,56 @@ export async function handleSearch(interaction: ChatInputCommandInteraction) {
     await interaction.editReply({ embeds: [embed] });
   }
 }
+
+export async function handleUserRegister(interaction: ChatInputCommandInteraction) {
+  const targetUser = interaction.options.getUser('유저', true);
+  const name = interaction.options.getString('이름', true).trim();
+  const tag = interaction.options.getString('태그', true).trim().replace('#', '');
+  
+  await interaction.deferReply();
+
+  try {
+    const stats = await getValorantStats(name, tag);
+    
+    const profile: UserProfile = {
+      discordId: targetUser.id,
+      discordTag: targetUser.tag,
+      riotName: stats.riotName,
+      riotTag: stats.riotTag,
+      tier: stats.tier,
+      peakTier: stats.peakTier,
+      rating: stats.rating,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    saveUser(profile);
+
+    const lastChangeText = stats.lastChange >= 0 ? `+${stats.lastChange}` : `${stats.lastChange}`;
+
+    const embed = new EmbedBuilder()
+      .setColor(0x00FF99) // Neon Green
+      .setTitle('🎯 [관리자] 발로란트 프로필 연동 완료')
+      .setDescription(`<@${targetUser.id}>님의 발로란트 프로필이 수동으로 연동되었습니다.`)
+      .addFields(
+        { name: '대상 유저', value: `<@${targetUser.id}>`, inline: true },
+        { name: 'Riot ID', value: `\`${stats.riotName}#${stats.riotTag}\``, inline: true },
+        { name: '현재 티어', value: `\`${stats.tier} (${stats.rr} RR)\``, inline: true },
+        { name: '최고 티어', value: `\`${stats.peakTier}\``, inline: true },
+        { name: '최근 경기 변동', value: `\`${lastChangeText}점\``, inline: true },
+        { name: '최근 5경기 전적', value: `\`${stats.winCount}승 ${stats.lossCount}패\``, inline: true },
+        { name: '최종 매칭 레이팅', value: `\`${stats.rating}점\` (최근 승률 반영)`, inline: true }
+      )
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (error: any) {
+    const embed = new EmbedBuilder()
+      .setColor(0xFF3366) // Neon Pink
+      .setTitle('❌ 수동 등록 실패')
+      .setDescription(error.message || '알 수 없는 오류가 발생했습니다.')
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+  }
+}
+
