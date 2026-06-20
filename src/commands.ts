@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder, ChatInputCommandInteraction, User, PermissionFlagsBits, ActionRowBuilder, UserSelectMenuBuilder, REST, Routes } from 'discord.js';
 import { getValorantStats } from './valorantApi';
-import { saveUser, getUser, UserProfile, deleteUser } from './database';
+import { saveUser, getUser, UserProfile, deleteUser, getAllUsers } from './database';
+import { createWorker } from 'tesseract.js';
 
 // 1. Definition of commands
 export const commands = [
@@ -109,6 +110,16 @@ export const commands = [
           { name: '글로벌 (전체 서버용 명령어 삭제)', value: 'global' },
           { name: '모두 (서버 및 글로벌 명령어 전체 삭제)', value: 'all' }
         )
+    ),
+
+  // /사진팀구성 [이미지]
+  new SlashCommandBuilder()
+    .setName('사진팀구성')
+    .setDescription('대기방/결과 창 스크너샷 이미지 속 등록된 유저들을 자동 매칭하여 밸런스 팀을 짭니다.')
+    .addAttachmentOption(option =>
+      option.setName('이미지')
+        .setDescription('팀원들의 닉네임이 포함된 대기방/전적 결과 화면 이미지')
+        .setRequired(true)
     )
 ].map(command => command.toJSON());
 
@@ -611,6 +622,127 @@ export async function handleClearCommands(interaction: ChatInputCommandInteracti
       .setTitle('❌ 청소 실패')
       .setDescription(error.message || '명령어 삭제 중 오류가 발생했습니다.');
     await interaction.editReply({ embeds: [embed] });
+  }
+}
+
+export async function handleImageMatchmaker(interaction: ChatInputCommandInteraction) {
+  const attachment = interaction.options.getAttachment('이미지', true);
+  
+  const contentType = attachment.contentType || '';
+  if (!contentType.startsWith('image/')) {
+    return interaction.reply({ content: '❌ 이미지 파일만 업로드할 수 있습니다.', ephemeral: true });
+  }
+
+  await interaction.deferReply();
+
+  let worker: any = null;
+  try {
+    // 1. Create worker and load eng+kor
+    worker = await createWorker('eng+kor');
+    
+    // 2. Perform OCR
+    const { data: { text } } = await worker.recognize(attachment.url);
+    console.log('[OCR Result] Extracted raw text:', text);
+
+    // 3. Normalize the recognized text
+    const normalizedText = text.replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
+
+    // 4. Find matching registered users
+    const matchedProfiles: UserProfile[] = [];
+    const allUsers = getAllUsers();
+
+    for (const user of allUsers) {
+      const normalizedRiotName = user.riotName.replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
+      
+      // If the user's name is in the OCR output
+      if (normalizedRiotName.length >= 2 && normalizedText.includes(normalizedRiotName)) {
+        matchedProfiles.push(user);
+      }
+    }
+
+    if (matchedProfiles.length < 2) {
+      const embed = new EmbedBuilder()
+        .setColor(0xFF3366)
+        .setTitle('❌ 인식 및 팀 구성 실패')
+        .setDescription(
+          `이미지에서 등록된 플레이어(최소 2명)를 감지하지 못했습니다.\n\n` +
+          `* **원인**: 게임 속 닉네임이 봇에 등록된 이름과 다르거나, 이미지 텍스트 해상도가 낮아 인식이 불가능할 수 있습니다.\n` +
+          `* **팁**: 유저가 연동한 라이엇 닉네임이 대기방 화면 이미지에 명확하게 들어가 있는지 확인해 주세요.`
+        );
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // 5. Balanced Matchmaking (Split into Team A & Team B)
+    const count = matchedProfiles.length;
+    const half = Math.floor(count / 2);
+    let minDiff = Infinity;
+    let bestTeamA: UserProfile[] = [];
+    let bestTeamB: UserProfile[] = [];
+
+    const combine = (start: number, combo: UserProfile[]) => {
+      if (combo.length === half) {
+        const teamA = combo;
+        const teamB = matchedProfiles.filter(p => !teamA.includes(p));
+        
+        const sumA = teamA.reduce((acc, p) => acc + p.rating, 0);
+        const sumB = teamB.reduce((acc, p) => acc + p.rating, 0);
+        
+        const diff = Math.abs(sumA - sumB);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestTeamA = [...teamA];
+          bestTeamB = [...teamB];
+        }
+        return;
+      }
+      
+      for (let i = start; i < count; i++) {
+        combo.push(matchedProfiles[i]);
+        combine(i + 1, combo);
+        combo.pop();
+      }
+    };
+
+    combine(0, []);
+
+    const totalRatingA = bestTeamA.reduce((acc, p) => acc + p.rating, 0);
+    const totalRatingB = bestTeamB.reduce((acc, p) => acc + p.rating, 0);
+    const avgRatingA = Math.round(totalRatingA / bestTeamA.length);
+    const avgRatingB = Math.round(totalRatingB / bestTeamB.length);
+
+    const embed = new EmbedBuilder()
+      .setColor(0xAA00FF) // Neon Purple
+      .setTitle('⚔️ 이미지 기반 내전 밸런스 매치 결과')
+      .setDescription(
+        `업로드하신 이미지에서 총 **${count}명**의 등록 유저를 인식하여 팀을 나눴습니다.\n` +
+        `*(레이팅 차이: ${minDiff}점)*`
+      )
+      .addFields(
+        {
+          name: `🔵 Team A (평균 ${avgRatingA}점 / 총 ${bestTeamA.length}명)`,
+          value: bestTeamA.map(p => `- <@${p.discordId}> (\`${p.riotName}#${p.riotTag}\` | ${p.tier})`).join('\n'),
+          inline: false,
+        },
+        {
+          name: `🔴 Team B (평균 ${avgRatingB}점 / 총 ${bestTeamB.length}명)`,
+          value: bestTeamB.map(p => `- <@${p.discordId}> (\`${p.riotName}#${p.riotTag}\` | ${p.tier})`).join('\n'),
+          inline: false,
+        }
+      )
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (error: any) {
+    console.error('[OCR Matchmaker Error] Exception:', error);
+    const embed = new EmbedBuilder()
+      .setColor(0xFF3366)
+      .setTitle('❌ 이미지 매칭 처리 오류')
+      .setDescription(error.message || '이미지를 분석하여 팀을 구성하는 도중 기술적인 오류가 발생했습니다.');
+    await interaction.editReply({ embeds: [embed] });
+  } finally {
+    if (worker) {
+      await worker.terminate();
+    }
   }
 }
 

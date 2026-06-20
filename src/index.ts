@@ -12,6 +12,7 @@ import {
   handleUserRegister,
   handleReload,
   handleClearCommands,
+  handleImageMatchmaker,
 } from './commands';
 
 dotenv.config();
@@ -34,34 +35,8 @@ const client = new Client({
 
 const guildId = process.env.GUILD_ID;
 
-client.once(Events.ClientReady, async (readyClient) => {
+client.once(Events.ClientReady, (readyClient) => {
   console.log(`Ready! Logged in as ${readyClient.user.tag}`);
-
-  // Register slash commands
-  if (clientId) {
-    const rest = new REST({ version: '10' }).setToken(token);
-    try {
-      if (guildId && guildId !== 'your_discord_server_id_here') {
-        console.log(`Started refreshing application (/) commands for guild: ${guildId}`);
-        await rest.put(
-          Routes.applicationGuildCommands(clientId, guildId),
-          { body: commands },
-        );
-        console.log('Successfully reloaded application (/) commands for guild.');
-      } else {
-        console.log('Started refreshing global application (/) commands.');
-        await rest.put(
-          Routes.applicationCommands(clientId),
-          { body: commands },
-        );
-        console.log('Successfully reloaded global application (/) commands (may take a few minutes to update).');
-      }
-    } catch (error) {
-      console.error('Failed to register slash commands:', error);
-    }
-  } else {
-    console.log('Skipping slash command registration (CLIENT_ID not provided in .env).');
-  }
 });
 
 // Handle Interactions (Slash commands & Components)
@@ -89,6 +64,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await handleReload(interaction);
       } else if (commandName === '청소') {
         await handleClearCommands(interaction);
+      } else if (commandName === '사진팀구성') {
+        await handleImageMatchmaker(interaction);
       }
     }
 
